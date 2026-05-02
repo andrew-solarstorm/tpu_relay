@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>Solana TX Sender</title>
+	<script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+	<script src="https://unpkg.com/@solana/wallet-adapter-base@latest/lib/index.iife.min.js"></script>
+	<script src="https://unpkg.com/@solana/wallet-adapter-wallets@latest/lib/index.iife.min.js"></script>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			padding: 20px;
+		}
+		button {
+			padding: 10px 20px;
+			font-size: 16px;
+			cursor: pointer;
+			margin: 10px 5px;
+		}
+		#status {
+			margin-top: 20px;
+			padding: 10px;
+			background: #f0f0f0;
+			border-radius: 5px;
+		}
+		.wallet-list {
+			margin: 10px 0;
+		}
+	</style>
+	<script>
+		// Configure your RPC endpoint here
+		const rpcEndpoint = "http://localhost:8080"
+		
+		let wallet = null;
+		let connection = null;
+
+		// Browser-compatible base58 encoder
+		const bs58 = {
+			encode: function(buffer) {
+				const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+				const bytes = new Uint8Array(buffer);
+				
+				// Count leading zeros
+				let zeros = 0;
+				for (let i = 0; i < bytes.length && bytes[i] === 0; i++) {
+					zeros++;
+				}
+				
+				// Allocate enough space in big-endian base58 representation
+				const size = Math.floor((bytes.length - zeros) * 138 / 100) + 1;
+				const b58 = new Uint8Array(size);
+				
+				for (let i = zeros; i < bytes.length; i++) {
+					let carry = bytes[i];
+					let j = 0;
+					
+					for (let k = size - 1; k >= 0; k--, j++) {
+						if (carry === 0 && j >= 1) break;
+						carry += 256 * b58[k];
+						b58[k] = carry % 58;
+						carry = Math.floor(carry / 58);
+					}
+				}
+				
+				// Skip leading zeros in base58 result
+				let start = 0;
+				while (start < size && b58[start] === 0) {
+					start++;
+				}
+				
+				// Translate the result into a string
+				let result = '1'.repeat(zeros);
+				for (let i = start; i < size; i++) {
+					result += ALPHABET[b58[i]];
+				}
+				
+				return result;
+			}
+		};
+
+		async function connectWallet() {
+			try {
+				// Try Backpack first
+				const backpackWallet = window.backpack;
+				if (backpackWallet) {
+					wallet = backpackWallet;
+					updateStatus("Connecting to Backpack...");
+					await wallet.connect();
+					const pubKey = wallet.publicKey.toString();
+					updateStatus(`Connected to Backpack: ${pubKey.substring(0, 8)}...${pubKey.substring(pubKey.length - 8)}`);
+					document.getElementById('sendBtn').disabled = false;
+					return;
+				}
+
+				// Try Solflare
+				const solflareWallet = window.solflare;
+				if (solflareWallet) {
+					wallet = solflareWallet;
+					updateStatus("Connecting to Solflare...");
+					await wallet.connect();
+					const pubKey = wallet.publicKey.toString();
+					updateStatus(`Connected to Solflare: ${pubKey.substring(0, 8)}...${pubKey.substring(pubKey.length - 8)}`);
+					document.getElementById('sendBtn').disabled = false;
+					return;
+				}
+
+				// Fallback to window.solana (Phantom, etc.)
+				const provider = window.solana;
+				if (!provider) {
+					alert("No Solana wallet found. Please install Backpack, Solflare, or another Solana wallet.");
+					return;
+				}
+
+				wallet = provider;
+				updateStatus("Connecting to wallet...");
+				await wallet.connect();
+				const pubKey = wallet.publicKey.toString();
+				updateStatus(`Connected: ${pubKey.substring(0, 8)}...${pubKey.substring(pubKey.length - 8)}`);
+				document.getElementById('sendBtn').disabled = false;
+			} catch (err) {
+				updateStatus(`Error connecting: ${err.message}`);
+				console.error(err);
+			}
+		}
+
+		async function confirmTransaction(connection, signature, commitment = 'confirmed') {
+			updateStatus(`⏳ Waiting for confirmation... (signature: ${signature.substring(0, 8)}...)`);
+			
+			const result = await connection.confirmTransaction(signature, commitment);
+			
+			if (result.value.err) {
+				throw new Error(`Transaction failed: ${JSON.stringify(result.value.err)}`);
+			}
+			
+			return result;
+		}
+
+		async function sendTransaction() {
+			if (!wallet || !wallet.publicKey) {
+				alert("Please connect wallet first");
+				return;
+			}
+
+			if (!rpcEndpoint || rpcEndpoint === "") {
+				alert("Please configure the rpcEndpoint variable in the HTML file");
+				updateStatus("❌ RPC endpoint not configured");
+				return;
+			}
+
+			try {
+				updateStatus("Creating transaction...");
+
+				const publicKey = wallet.publicKey;
+				const dest = new solanaWeb3.PublicKey("7FhwXvpMPjXU4duK51oTMu2QxMUeHhMvzXCXdFVD94fC");
+
+				// Create simple transfer TX with custom fetch to avoid CORS issues
+				connection = new solanaWeb3.Connection(rpcEndpoint, {
+					commitment: "processed",
+					fetch: (url, options) => {
+						// Remove the solana-client header that causes CORS issues
+						if (options && options.headers) {
+							delete options.headers['solana-client'];
+						}
+						return fetch(url, options);
+					}
+				});
+				const recentBlockhash = await connection.getLatestBlockhash();
+
+				const tx = new solanaWeb3.Transaction({
+					feePayer: publicKey,
+					recentBlockhash: recentBlockhash.blockhash,
+				});
+
+				tx.add(
+					solanaWeb3.ComputeBudgetProgram.setComputeUnitLimit({units: 10_000}),
+					solanaWeb3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 20_000_000 }),
+					solanaWeb3.SystemProgram.transfer({
+						fromPubkey: publicKey,
+						toPubkey: dest,
+						lamports: 100000, // 0.0001 SOL
+					})
+				);
+
+				updateStatus("Please approve transaction in your wallet...");
+
+				// Sign transaction
+				const signedTx = await wallet.signTransaction(tx);
+				const serialized = signedTx.serialize();
+
+				updateStatus("Sending transaction via RPC...");
+
+				// Send transaction via RPC to localhost endpoint
+				const signature = await connection.sendRawTransaction(serialized, {
+					skipPreflight: true,
+					preflightCommitment: "confirmed"
+				});
+
+				updateStatus(`Transaction sent! Signature: ${signature.substring(0, 8)}...`);
+
+				// Wait for confirmation
+				await confirmTransaction(connection, signature);
+
+				updateStatus(`✅ Transaction confirmed successfully! Signature: ${signature}`);
+				console.log(`Full signature: ${signature}`);
+			} catch (err) {
+				updateStatus(`❌ Error: ${err.message}`);
+				console.error(err);
+			}
+		}
+
+		function updateStatus(message) {
+			document.getElementById('status').textContent = message;
+		}
+
+		function disconnectWallet() {
+			if (wallet && wallet.disconnect) {
+				wallet.disconnect();
+			}
+			wallet = null;
+			document.getElementById('sendBtn').disabled = true;
+			updateStatus("Wallet disconnected");
+		}
+	</script>
+</head>
+<body>
+	<h1>Solana TX Sender</h1>
+	<div class="wallet-list">
+		<button onclick="connectWallet()">Connect Wallet (Backpack/Solflare/Phantom)</button>
+		<button onclick="disconnectWallet()">Disconnect</button>
+	</div>
+	<div>
+		<button id="sendBtn" onclick="sendTransaction()" disabled>Send 0.0001 SOL</button>
+	</div>
+	<div id="status">Not connected</div>
+</body>
+</html>

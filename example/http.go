@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"net/http"
 
 	"github.com/andrew-solarstorm/digo"
-	"github.com/andrew-solarstorm/tpu_relay"
 	"github.com/bytedance/sonic"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
@@ -28,8 +26,8 @@ type HTTPService struct {
 	host   string
 	rpcUrl string
 
-	server      *http.Server
-	scheduleSvc *tpu_relay.TPUService
+	server   *http.Server
+	relaySvc *RelayService
 
 	httpClient *http.Client
 }
@@ -39,8 +37,8 @@ func (svc *HTTPService) ID() string {
 }
 
 func (svc *HTTPService) Configure(c digo.IContainer) error {
-	svc.scheduleSvc = digo.Instance[*tpu_relay.TPUService](tpu_relay.TPU_SVC, c)
-	conf := digo.GetConfig[*tpu_relay.Config](c)
+	svc.relaySvc = digo.Instance[*RelayService](RELAY_SVC, c)
+	conf := digo.GetConfig[*Config](c)
 	svc.host = conf.HTTPHost
 	svc.port = conf.HTTPPort
 	svc.rpcUrl = conf.RPCUrl
@@ -185,7 +183,7 @@ func (svc *HTTPService) sendTxn(req *RPCRequest, c *gin.Context) {
 	}
 
 	// send to 2 slot ahead and 2 leaders from the target slot.
-	err = svc.scheduleSvc.SendRawTransaction(context.Background(), txReqBytes, 2, 2)
+	err = svc.relaySvc.Relay().SendRawTransaction(c.Request.Context(), txReqBytes, 2, 2)
 	if err != nil {
 		svc.handleErr(c, err, ErrCodeInternalError)
 		return

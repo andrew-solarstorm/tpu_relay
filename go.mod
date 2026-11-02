@@ -4,7 +4,6 @@ go 1.26.1
 
 require (
 	github.com/andrew-solarstorm/digo v0.0.0-20260429064820-6ae335d3e73c
-	github.com/andrew-solarstorm/yellowstone-grpc-client-go v0.0.0-20260407053633-3d0b60f732ac
 	github.com/bytedance/sonic v1.15.1
 	github.com/gagliardetto/solana-go v1.14.0
 	github.com/gin-contrib/cors v1.7.7
@@ -65,7 +64,5 @@ require (
 	golang.org/x/term v0.40.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251022142026-3a174f9686a8 // indirect
-	google.golang.org/grpc v1.77.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )

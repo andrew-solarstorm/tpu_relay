@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/andrew-solarstorm/digo"
-	"github.com/andrew-solarstorm/tpu_relay"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 )
@@ -16,12 +15,12 @@ func main() {
 
 	container, err := digo.New(
 		// config
-		&tpu_relay.Config{},
+		&Config{},
 
 		/// Services
-		&tpu_relay.TPUService{},
-		&tpu_relay.ScheduleService{},
-		&tpu_relay.WsSlotIngestService{},
+		// started in this order, HTTPService blocks so it stays last
+		&RelayService{},
+		&SlotFeedService{},
 		&HTTPService{},
 	)
 	if err != nil {

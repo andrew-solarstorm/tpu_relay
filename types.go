@@ -21,23 +21,6 @@ type LeaderAtSlot struct {
 	Info *Leader
 }
 
-// ws request
-type rpcRequest struct {
-	Jsonrpc string `json:"jsonrpc"`
-	ID      int    `json:"id"`
-	Method  string `json:"method"`
-	Params  []any  `json:"params"`
-}
-
-type slotNotification struct {
-	Jsonrpc string `json:"jsonrpc"`
-	Method  string `json:"method"`
-	Params  *struct {
-		Result struct {
-			Slot   uint64 `json:"slot"`
-			Parent uint64 `json:"parent"`
-			Root   uint64 `json:"root"`
-		} `json:"result"`
-		Subscription int64 `json:"subscription"`
-	} `json:"params"`
+type EpochSchedule struct {
+	Start, End uint64
 }

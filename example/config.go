@@ -1,6 +1,7 @@
-package tpu_relay
+package main
 
 import (
+	"errors"
 	"os"
 	"strconv"
 
@@ -8,9 +9,8 @@ import (
 )
 
 type Config struct {
-	RPCUrl    string
-	GRPCUrl   string
-	GRPCToken string
+	RPCUrl string
+	WSUrl  string
 
 	HTTPPort int
 	HTTPHost string
@@ -19,8 +19,7 @@ type Config struct {
 // Load implements [digo.IConfig].
 func (c *Config) Load() error {
 	c.RPCUrl = os.Getenv("RPC_URL")
-	c.GRPCUrl = os.Getenv("YELLOWSTONE_URL")
-	c.GRPCToken = os.Getenv("YELLOWSTONE_TOKEN")
+	c.WSUrl = os.Getenv("WS_URL")
 
 	c.HTTPHost = os.Getenv("HTTP_HOST")
 	if c.HTTPHost == "" {
@@ -41,8 +40,11 @@ func (c *Config) Load() error {
 
 // Validate implements [digo.IConfig].
 func (c *Config) Validate() error {
-	if c.GRPCUrl == "" || c.GRPCToken == "" || c.RPCUrl == "" {
-		return nil
+	if c.RPCUrl == "" {
+		return errors.New("RPC_URL is required")
+	}
+	if c.WSUrl == "" {
+		return errors.New("WS_URL is required")
 	}
 
 	return nil

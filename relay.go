@@ -56,14 +56,16 @@ func (r *Relay) worker() {
 		}
 
 		leaders := r.schler.futureLeaders(slot, 1, 3)
-		for _, leader := range leaders {
-			if !r.tpu.IsConnected(leader.Info.Pubkey) && !r.tpu.IsConnecting(leader.Info.Pubkey) {
-				_, err := r.tpu.Connect(r.ctx, leader)
-				if err != nil {
-					log.Error().Err(err).Msgf("failed to establish connection to %s at slot %d", leader.Info.Pubkey.String(), leader.Slot)
+		go func() {
+			for _, leader := range leaders {
+				if !r.tpu.IsConnected(leader.Info.Pubkey) && !r.tpu.IsConnecting(leader.Info.Pubkey) {
+					_, err := r.tpu.Connect(r.ctx, leader)
+					if err != nil {
+						log.Error().Err(err).Msgf("failed to establish connection to %s at slot %d", leader.Info.Pubkey.String(), leader.Slot)
+					}
 				}
 			}
-		}
+		}()
 
 	}
 }

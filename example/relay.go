@@ -13,7 +13,8 @@ const RELAY_SVC = "relay-service"
 type RelayService struct {
 	digo.BaseDIInstance
 
-	rpcUrl string
+	rpcUrl  string
+	maxConn int
 
 	relay  *tpu_relay.Relay
 	cancel context.CancelFunc
@@ -26,6 +27,7 @@ func (svc *RelayService) ID() string {
 func (svc *RelayService) Configure(c digo.IContainer) error {
 	conf := digo.GetConfig[*Config](c)
 	svc.rpcUrl = conf.RPCUrl
+	svc.maxConn = conf.MaxConn
 	return nil
 }
 
@@ -33,7 +35,7 @@ func (svc *RelayService) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// loads the cluster nodes and leader schedule from the RPC.
-	relay, err := tpu_relay.NewRelay(ctx, svc.rpcUrl)
+	relay, err := tpu_relay.NewRelay(ctx, svc.rpcUrl, svc.maxConn)
 	if err != nil {
 		cancel()
 		return err

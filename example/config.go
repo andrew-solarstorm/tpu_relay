@@ -14,6 +14,9 @@ type Config struct {
 
 	HTTPPort int
 	HTTPHost string
+
+	// max TPU connections kept open to leaders, least recently used are evicted
+	MaxConn int
 }
 
 // Load implements [digo.IConfig].
@@ -35,6 +38,17 @@ func (c *Config) Load() error {
 	} else {
 		c.HTTPPort = 8080
 	}
+
+	maxConnStr := os.Getenv("MAX_CONN")
+	if maxConnStr != "" {
+		maxConn, err := strconv.Atoi(maxConnStr)
+		if err != nil {
+			return err
+		}
+		c.MaxConn = maxConn
+	} else {
+		c.MaxConn = 3000
+	}
 	return nil
 }
 
@@ -45,6 +59,9 @@ func (c *Config) Validate() error {
 	}
 	if c.WSUrl == "" {
 		return errors.New("WS_URL is required")
+	}
+	if c.MaxConn <= 0 {
+		return errors.New("MAX_CONN must be positive")
 	}
 
 	return nil

@@ -22,9 +22,9 @@ type tpuDiscover struct {
 	connecting map[solana.PublicKey]struct{}
 }
 
-func NewTPUDiscover() (*tpuDiscover, error) {
+func NewTPUDiscover(maxCon int) (*tpuDiscover, error) {
 	svc := tpuDiscover{}
-	cache, err := lru.NewWithEvict(100, svc.onEvict)
+	cache, err := lru.NewWithEvict(maxCon, svc.onEvict)
 	if err != nil {
 		return nil, err
 	}

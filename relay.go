@@ -18,8 +18,8 @@ type Relay struct {
 	crSlot uint64
 }
 
-func NewRelay(ctx context.Context, rpcURL string) (*Relay, error) {
-	tpu, err := NewTPUDiscover()
+func NewRelay(ctx context.Context, rpcURL string, maxCon int) (*Relay, error) {
+	tpu, err := NewTPUDiscover(maxCon)
 	if err != nil {
 		return nil, err
 	}

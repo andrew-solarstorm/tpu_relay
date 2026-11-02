@@ -108,6 +108,7 @@ func (svc *tpuDiscover) connect(ctx context.Context, leader *LeaderAtSlot) (*Lea
 	log.Info().
 		Str("quic", leader.Info.TPUQUIC).
 		Str("leader", leader.Info.Pubkey.String()).
+		Uint64("slot", leader.Slot).
 		Msgf("TPUService::connect Dial took: %s", time.Since(tn))
 	leaderConn := &LeaderConn{
 		QUICURL: leader.Info.TPUQUIC,

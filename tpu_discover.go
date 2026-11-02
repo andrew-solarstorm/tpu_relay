@@ -35,7 +35,7 @@ func NewTPUDiscover() (*tpuDiscover, error) {
 	}
 	svc.cert = cert
 	svc.connecting = make(map[solana.PublicKey]struct{})
-	return nil, nil
+	return &svc, nil
 }
 
 func (svc *tpuDiscover) onEvict(pk solana.PublicKey, leader *LeaderConn) {

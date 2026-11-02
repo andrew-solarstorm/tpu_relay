@@ -18,7 +18,6 @@ func main() {
 		&Config{},
 
 		/// Services
-		// started in this order, HTTPService blocks so it stays last
 		&RelayService{},
 		&SlotFeedService{},
 		&HTTPService{},

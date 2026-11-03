@@ -146,3 +146,62 @@ func equal(a, b []uint64) bool {
 	}
 	return true
 }
+
+func TestAdvanceSwitchesToPrefetchedEpoch(t *testing.T) {
+	s := newTestScheduler(100, 200, map[uint64]byte{150: 1})
+	s.next = map[uint64]*Leader{205: {Pubkey: pk(2)}}
+	s.nextSche = EpochSchedule{Start: 200, End: 300}
+
+	if s.advance(199) {
+		t.Error("advance switched before the next epoch started")
+	}
+	if !s.advance(205) {
+		t.Fatal("advance did not switch into the prefetched epoch")
+	}
+	if !s.inEpoch(250) || s.inEpoch(150) {
+		t.Errorf("epoch after advance = %+v", s.epSche)
+	}
+	if got := s.futureLeaders(205, 0, 1); len(got) != 1 || got[0].Info.Pubkey != pk(2) {
+		t.Errorf("leaders after advance = %v", slotsOf(got))
+	}
+	if s.next != nil || s.advance(250) {
+		t.Error("prefetched epoch should be consumed by advance")
+	}
+}
+
+func TestAdvanceIgnoresSlotBeyondPrefetchedEpoch(t *testing.T) {
+	s := newTestScheduler(100, 200, nil)
+	s.next = map[uint64]*Leader{}
+	s.nextSche = EpochSchedule{Start: 200, End: 300}
+	if s.advance(300) {
+		t.Error("advance accepted a slot past the prefetched epoch")
+	}
+}
+
+func TestFutureLeadersSpanPrefetchedEpoch(t *testing.T) {
+	s := newTestScheduler(100, 104, map[uint64]byte{102: 1, 103: 1})
+	s.next = map[uint64]*Leader{104: {Pubkey: pk(2)}, 105: {Pubkey: pk(3)}}
+	s.nextSche = EpochSchedule{Start: 104, End: 106}
+
+	got := s.futureLeaders(101, 0, 3)
+	if want := []uint64{102, 104, 105}; !equal(slotsOf(got), want) {
+		t.Fatalf("want slots %v, got %v", want, slotsOf(got))
+	}
+}
+
+func TestNeedsNext(t *testing.T) {
+	s := newTestScheduler(0, 10_000, nil)
+	if s.needsNext(10_000 - prefetchSlots - 1) {
+		t.Error("too early to prefetch")
+	}
+	if !s.needsNext(10_000 - prefetchSlots) {
+		t.Error("should prefetch within the window")
+	}
+	if s.needsNext(10_000) {
+		t.Error("slot outside the loaded epoch is a reload, not a prefetch")
+	}
+	s.next = map[uint64]*Leader{}
+	if s.needsNext(10_000 - 1) {
+		t.Error("already prefetched")
+	}
+}

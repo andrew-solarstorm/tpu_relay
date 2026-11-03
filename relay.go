@@ -18,15 +18,14 @@ var (
 	ErrNotImplemented = errors.New("tpu_relay: not implemented")
 )
 
-// errStaleEpoch means the RPC answered, but still serves the previous epoch.
 var errStaleEpoch = errors.New("rpc is still serving the previous epoch")
 
-// reload retry delays grow exponentially from reloadDelay up to reloadMaxDelay.
-// They are variables so tests can shorten them.
 var (
 	reloadDelay    = 500 * time.Millisecond
 	reloadMaxDelay = 10 * time.Second
 )
+
+var sendAttemptTimeout = time.Second
 
 type Relay struct {
 	tpu    *tpuDiscover
@@ -38,12 +37,10 @@ type Relay struct {
 	crsMu  sync.RWMutex
 	crSlot uint64
 
-	// reloading is set while a background schedule reload is running.
-	reloading atomic.Bool
+	reloading   atomic.Bool
+	prefetching atomic.Bool
 }
 
-// NewRelay starts a relay that runs until ctx is cancelled, at which point
-// every pooled connection is closed.
 func NewRelay(ctx context.Context, rpcURL string, maxCon int) (*Relay, error) {
 	tpu, err := NewTPUDiscover(ctx, maxCon)
 	if err != nil {
@@ -81,19 +78,53 @@ func (r *Relay) handleSlot(slot uint64) {
 		return
 	}
 
-	if !r.schler.inEpoch(slot) {
+	// the prefetched schedule makes the epoch switch free; reload only if it is missing
+	if !r.schler.inEpoch(slot) && !r.schler.advance(slot) {
 		r.reloadSchedule()
 		return
 	}
 
+	if r.schler.needsNext(slot) {
+		r.prefetchSchedule(slot)
+	}
+
 	leaders := r.schler.futureLeaders(slot, 1, 3)
-	go func() {
-		for _, leader := range leaders {
-			// Connect is a no-op for a live connection and shares an in-flight dial.
+	for _, leader := range leaders {
+		go func() {
 			_, err := r.tpu.Connect(r.ctx, leader)
 			if err != nil {
 				log.Error().Err(err).Msgf("failed to establish connection to %s at slot %d", leader.Info.Pubkey.String(), leader.Slot)
 			}
+		}()
+
+	}
+}
+
+func (r *Relay) prefetchSchedule(slot uint64) {
+	if !r.prefetching.CompareAndSwap(false, true) {
+		return
+	}
+
+	go func() {
+		defer r.prefetching.Store(false)
+
+		err := retry.New(
+			retry.Context(r.ctx),
+			retry.UntilSucceeded(),
+			retry.Delay(reloadDelay),
+			retry.MaxDelay(reloadMaxDelay),
+			retry.LastErrorOnly(true),
+			retry.OnRetry(func(attempt uint, err error) {
+				log.Warn().Err(err).Uint("attempt", attempt).Msg("failed to prefetch next schedule, retrying")
+			}),
+		).Do(func() error {
+			if !r.schler.inEpoch(r.CurrentSlot()) {
+				return retry.Unrecoverable(errors.New("epoch ended before the next schedule loaded"))
+			}
+			return r.schler.loadNext(r.ctx)
+		})
+		if err != nil && r.ctx.Err() == nil {
+			log.Error().Err(err).Uint64("slot", slot).Msg("giving up on prefetching next schedule")
 		}
 	}()
 }
@@ -155,9 +186,6 @@ func (r *Relay) CurrentSlot() uint64 {
 	return r.crSlot
 }
 
-// SendRawTransaction sends rawTx to the first of the next n distinct leaders
-// (starting ahead slots from the current slot) that accepts it. It returns an
-// error if no leader could be found or every attempt failed.
 func (r *Relay) SendRawTransaction(
 	ctx context.Context,
 	rawTx []byte,
@@ -174,24 +202,41 @@ func (r *Relay) SendRawTransaction(
 		return ErrNoLeaders
 	}
 
-	var errs []error
+	sendCtx := context.WithoutCancel(ctx)
+	results := make(chan error, len(leaders))
 	for _, leader := range leaders {
-		err := r.tpu.Send(ctx, leader, rawTx)
-		if err == nil {
-			log.Info().
-				Uint64("current_slot", slot).
-				Uint64("Slot", leader.Slot).
-				Str("leader", leader.Info.Pubkey.String()).
-				Msg("txn sent")
-			return nil
-		}
+		go func() { results <- r.sendToLeader(sendCtx, slot, leader, rawTx) }()
+	}
 
-		log.Error().Err(err).
-			Uint64("current_slot", slot).
-			Uint64("Slot", leader.Slot).
-			Str("leader", leader.Info.Pubkey.String()).
-			Msg("Failed to send to leader retry next leader")
-		errs = append(errs, fmt.Errorf("leader %s at slot %d: %w", leader.Info.Pubkey, leader.Slot, err))
+	var errs []error
+	for range leaders {
+		select {
+		case err := <-results:
+			if err == nil {
+				return nil
+			}
+			errs = append(errs, err)
+		case <-ctx.Done():
+			return errors.Join(append(errs, ctx.Err())...)
+		}
 	}
 	return errors.Join(errs...)
+}
+
+func (r *Relay) sendToLeader(ctx context.Context, slot uint64, leader *LeaderAtSlot, rawTx []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, sendAttemptTimeout)
+	defer cancel()
+
+	l := log.With().
+		Uint64("current_slot", slot).
+		Uint64("Slot", leader.Slot).
+		Str("leader", leader.Info.Pubkey.String()).
+		Logger()
+
+	if err := r.tpu.Send(ctx, leader, rawTx); err != nil {
+		l.Error().Err(err).Msg("Failed to send to leader")
+		return fmt.Errorf("leader %s at slot %d: %w", leader.Info.Pubkey, leader.Slot, err)
+	}
+	l.Info().Msg("txn sent")
+	return nil
 }

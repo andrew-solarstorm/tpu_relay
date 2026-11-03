@@ -183,7 +183,7 @@ func (svc *HTTPService) sendTxn(req *RPCRequest, c *gin.Context) {
 	}
 
 	// send to 2 slot ahead and 2 leaders from the target slot.
-	err = svc.relaySvc.Relay().SendRawTransaction(c.Request.Context(), txReqBytes, 2, 2)
+	err = svc.relaySvc.Relay().SendRawTransaction(c.Request.Context(), txReqBytes, 0, 2)
 	if err != nil {
 		svc.handleErr(c, err, ErrCodeInternalError)
 		return

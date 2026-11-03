@@ -4,6 +4,7 @@ go 1.26.1
 
 require (
 	github.com/andrew-solarstorm/digo v0.0.0-20260429064820-6ae335d3e73c
+	github.com/avast/retry-go/v5 v5.0.0
 	github.com/bytedance/sonic v1.15.1
 	github.com/gagliardetto/solana-go v1.14.0
 	github.com/gin-contrib/cors v1.7.7

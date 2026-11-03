@@ -14,10 +14,8 @@ type scheduler struct {
 	rpcCli *rpc.Client
 
 	mu           sync.RWMutex
-	leaders      map[solana.PK]*Leader
 	leaderAtSlot map[uint64]*Leader
-
-	epSche *EpochSchedule
+	epSche       EpochSchedule
 }
 
 func newScheduler(
@@ -27,7 +25,6 @@ func newScheduler(
 	cli := rpc.New(rpcURL)
 
 	scheduler := &scheduler{
-		leaders:      make(map[solana.PK]*Leader),
 		leaderAtSlot: make(map[uint64]*Leader),
 		rpcCli:       cli,
 	}
@@ -40,14 +37,14 @@ func newScheduler(
 	return scheduler, nil
 }
 
-func (sch *scheduler) inEpoch(slot uint64) bool {
-	return slot < sch.epSche.End-1
+// inEpoch reports whether slot falls before the end of the loaded epoch.
+func (sche *scheduler) inEpoch(slot uint64) bool {
+	sche.mu.RLock()
+	defer sche.mu.RUnlock()
+	return slot < sche.epSche.End && slot >= sche.epSche.Start
 }
 
 func (sche *scheduler) load(ctx context.Context) error {
-	sche.mu.Lock()
-	defer sche.mu.Unlock()
-
 	nodes, err := sche.rpcCli.GetClusterNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("GetClusterNodes: %w", err)
@@ -59,25 +56,34 @@ func (sche *scheduler) load(ctx context.Context) error {
 		return fmt.Errorf("GetEpochInfo: %w", err)
 	}
 
-	leaderSchedule, err := sche.rpcCli.GetLeaderSchedule(ctx)
+	leaderSchedule, err := sche.rpcCli.GetLeaderScheduleWithOpts(ctx, &rpc.GetLeaderScheduleOpts{
+		Commitment: rpc.CommitmentProcessed,
+		Epoch:      &epoch.AbsoluteSlot,
+	})
 	if err != nil {
 		return fmt.Errorf("GetLeaderSchedule: %w", err)
 	}
 	log.Info().Int("leaders_in_schedule", len(leaderSchedule)).Msg("Leader schedule loaded")
 
-	sche.buildIndex(nodes, epoch, leaderSchedule)
+	leaderAtSlot, epSche := buildIndex(nodes, epoch, leaderSchedule)
+
+	sche.mu.Lock()
+	sche.leaderAtSlot = leaderAtSlot
+	sche.epSche = epSche
+	sche.mu.Unlock()
 
 	return nil
 }
 
-func (sche *scheduler) buildIndex(
+func buildIndex(
 	nodes []*rpc.GetClusterNodesResult,
 	epoch *rpc.GetEpochInfoResult,
 	leaderSchedule rpc.GetLeaderScheduleResult,
-) {
+) (map[uint64]*Leader, EpochSchedule) {
+	leaders := make(map[solana.PK]*Leader, len(nodes))
 	for _, node := range nodes {
 		if node.TPUQUIC != nil && !node.Pubkey.IsZero() {
-			sche.leaders[node.Pubkey] = &Leader{
+			leaders[node.Pubkey] = &Leader{
 				TPUQUIC: *node.TPUQUIC,
 				Pubkey:  node.Pubkey,
 			}
@@ -87,41 +93,46 @@ func (sche *scheduler) buildIndex(
 	start := epoch.AbsoluteSlot - epoch.SlotIndex
 	end := start + epoch.SlotsInEpoch
 
-	sche.epSche = &EpochSchedule{
-		Start: start,
-		End:   end,
-	}
-
+	leaderAtSlot := make(map[uint64]*Leader, epoch.SlotsInEpoch)
 	for pk, slotIndices := range leaderSchedule {
+		leader, ok := leaders[pk]
+		if !ok {
+			continue
+		}
+
 		for _, idx := range slotIndices {
 			slot := start + idx
 			if slot < epoch.AbsoluteSlot {
 				continue
 			}
 
-			if _, ok := sche.leaders[pk]; ok {
-				sche.leaderAtSlot[slot] = sche.leaders[pk]
-			}
+			leaderAtSlot[slot] = leader
+			log.Info().Uint64("slot", slot).Str("leader", pk.String()).Msg("building index")
 		}
 	}
-}
 
-func (sche *scheduler) leaderAt(slot uint64) *Leader {
-	sche.mu.RLock()
-	defer sche.mu.RUnlock()
-	return sche.leaderAtSlot[slot]
+	return leaderAtSlot, EpochSchedule{Start: start, End: end}
 }
 
 func (sche *scheduler) futureLeaders(slot, slotDiff, n uint64) []*LeaderAtSlot {
-	leaders := make([]*LeaderAtSlot, 0, n)
+	if n == 0 {
+		return nil
+	}
+
+	sche.mu.RLock()
+	defer sche.mu.RUnlock()
+
+	first := slot + slotDiff
+	if first < slot { // overflow
+		return nil
+	}
+	first = max(first, sche.epSche.Start)
+
+	leaders := make([]*LeaderAtSlot, 0, min(n, 8))
 	unique := make(map[solana.PK]struct{})
 
-	i := slotDiff
-
-	for {
-		l := sche.leaderAt(slot + i)
-		i++
-
+	for s := first; s < sche.epSche.End; s++ {
+		l := sche.leaderAtSlot[s]
 		if l == nil {
 			continue
 		}
@@ -130,9 +141,9 @@ func (sche *scheduler) futureLeaders(slot, slotDiff, n uint64) []*LeaderAtSlot {
 			continue
 		}
 
-		leaders = append(leaders, &LeaderAtSlot{Info: l, Slot: slot + i})
+		leaders = append(leaders, &LeaderAtSlot{Info: l, Slot: s})
 		unique[l.Pubkey] = struct{}{}
-		if len(unique) >= int(n) {
+		if uint64(len(leaders)) >= n {
 			break
 		}
 	}

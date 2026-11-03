@@ -14,15 +14,15 @@ import (
 
 const DEFAULT_COMMON_NAME = "Solana node"
 
-func newDummyX509Certificate() ([]byte, []byte) {
+func newDummyX509Certificate() (certPem, privPem []byte, err error) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
 
 	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 62))
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
 
 	tmpl := x509.Certificate{
@@ -39,16 +39,17 @@ func newDummyX509Certificate() ([]byte, []byte) {
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, publicKey, privateKey)
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
 
 	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
 
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}),
-		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyBytes})
+		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyBytes}),
+		nil
 }
 
 func createSubjectAltNameExtension() pkix.Extension {
@@ -59,7 +60,10 @@ func createSubjectAltNameExtension() pkix.Extension {
 }
 
 func createTlsConfig() (*tls.Config, error) {
-	certPem, privPem := newDummyX509Certificate()
+	certPem, privPem, err := newDummyX509Certificate()
+	if err != nil {
+		return nil, err
+	}
 	cert, err := tls.X509KeyPair(certPem, privPem)
 	if err != nil {
 		return nil, err

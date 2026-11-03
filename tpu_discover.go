@@ -13,17 +13,24 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type dialCall struct {
+	done chan struct{}
+	conn *LeaderConn
+	err  error
+}
+
 type tpuDiscover struct {
-	// poll LRU is already thread-safe
+	ctx context.Context
+
 	pool *lru.Cache[solana.PublicKey, *LeaderConn]
 	cert *tls.Config
 
-	mut        sync.RWMutex
-	connecting map[solana.PublicKey]struct{}
+	mut     sync.Mutex
+	dialing map[solana.PublicKey]*dialCall
 }
 
-func NewTPUDiscover(maxCon int) (*tpuDiscover, error) {
-	svc := tpuDiscover{}
+func NewTPUDiscover(ctx context.Context, maxCon int) (*tpuDiscover, error) {
+	svc := tpuDiscover{ctx: ctx}
 	cache, err := lru.NewWithEvict(maxCon, svc.onEvict)
 	if err != nil {
 		return nil, err
@@ -34,7 +41,7 @@ func NewTPUDiscover(maxCon int) (*tpuDiscover, error) {
 		return nil, err
 	}
 	svc.cert = cert
-	svc.connecting = make(map[solana.PublicKey]struct{})
+	svc.dialing = make(map[solana.PublicKey]*dialCall)
 	return &svc, nil
 }
 
@@ -43,43 +50,59 @@ func (svc *tpuDiscover) onEvict(pk solana.PublicKey, leader *LeaderConn) {
 	_ = leader.Conn.CloseWithError(quic.ApplicationErrorCode(quic.NoError), "client close")
 }
 
-func (svc *tpuDiscover) IsConnecting(pk solana.PublicKey) bool {
-	svc.mut.RLock()
-	defer svc.mut.RUnlock()
-	_, ok := svc.connecting[pk]
-	return ok
+func (svc *tpuDiscover) Close() {
+	svc.pool.Purge()
 }
 
-func (svc *tpuDiscover) SetConnecting(pk solana.PublicKey, connecting bool) {
-	svc.mut.Lock()
-	defer svc.mut.Unlock()
-	if connecting {
-		svc.connecting[pk] = struct{}{}
-	} else {
-		delete(svc.connecting, pk)
+func (svc *tpuDiscover) live(pk solana.PublicKey) *LeaderConn {
+	if conn, ok := svc.pool.Get(pk); ok && conn.Conn.Context().Err() == nil {
+		return conn
 	}
-}
-
-func (svc *tpuDiscover) IsConnected(pk solana.PublicKey) bool {
-	_, ok := svc.pool.Peek(pk)
-	return ok
+	return nil
 }
 
 func (svc *tpuDiscover) Connect(ctx context.Context, leader *LeaderAtSlot) (*LeaderConn, error) {
-	if conn, ok := svc.pool.Peek(leader.Info.Pubkey); ok {
-		if conn.Conn.Context().Err() == nil {
-			return conn, nil
-		}
-		svc.pool.Remove(leader.Info.Pubkey)
+	pk := leader.Info.Pubkey
+	if conn := svc.live(pk); conn != nil {
+		return conn, nil
 	}
 
-	return svc.connect(ctx, leader)
+	svc.mut.Lock()
+	if conn := svc.live(pk); conn != nil {
+		svc.mut.Unlock()
+		return conn, nil
+	}
+	call, inflight := svc.dialing[pk]
+	if !inflight {
+		svc.pool.Remove(pk)
+		call = &dialCall{done: make(chan struct{})}
+		svc.dialing[pk] = call
+		go svc.dial(call, leader)
+	}
+	svc.mut.Unlock()
+
+	select {
+	case <-call.done:
+		return call.conn, call.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (svc *tpuDiscover) dial(call *dialCall, leader *LeaderAtSlot) {
+	call.conn, call.err = svc.connect(svc.ctx, leader)
+
+	svc.mut.Lock()
+	if call.err == nil {
+		svc.pool.Add(leader.Info.Pubkey, call.conn)
+	}
+	delete(svc.dialing, leader.Info.Pubkey)
+	svc.mut.Unlock()
+
+	close(call.done)
 }
 
 func (svc *tpuDiscover) connect(ctx context.Context, leader *LeaderAtSlot) (*LeaderConn, error) {
-	svc.SetConnecting(leader.Info.Pubkey, true)
-	defer svc.SetConnecting(leader.Info.Pubkey, false)
-
 	tn := time.Now()
 	udpAddr, err := net.ResolveUDPAddr("udp", leader.Info.TPUQUIC)
 	if err != nil {
@@ -99,7 +122,6 @@ func (svc *tpuDiscover) connect(ctx context.Context, leader *LeaderAtSlot) (*Lea
 	if err != nil {
 		log.Error().
 			Err(err).
-			Any("leader", leader).
 			Str("leader", leader.Info.Pubkey.String()).
 			Msg("TPUService::connect dial error")
 		return nil, err
@@ -110,13 +132,11 @@ func (svc *tpuDiscover) connect(ctx context.Context, leader *LeaderAtSlot) (*Lea
 		Str("leader", leader.Info.Pubkey.String()).
 		Uint64("slot", leader.Slot).
 		Msgf("TPUService::connect Dial took: %s", time.Since(tn))
-	leaderConn := &LeaderConn{
+
+	return &LeaderConn{
 		QUICURL: leader.Info.TPUQUIC,
 		Conn:    conn,
-	}
-
-	svc.pool.Add(leader.Info.Pubkey, leaderConn)
-	return leaderConn, nil
+	}, nil
 }
 
 func (svc *tpuDiscover) Send(ctx context.Context, leader *LeaderAtSlot, rawTx []byte) error {
@@ -129,11 +149,10 @@ func (svc *tpuDiscover) Send(ctx context.Context, leader *LeaderAtSlot, rawTx []
 	if err != nil {
 		return err
 	}
-	defer stream.Close()
 
-	_, err = stream.Write(rawTx)
-	if err != nil {
+	if _, err = stream.Write(rawTx); err != nil {
+		stream.CancelWrite(0)
 		return err
 	}
-	return nil
+	return stream.Close()
 }

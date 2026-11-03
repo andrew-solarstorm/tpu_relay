@@ -89,7 +89,6 @@ func (r *Relay) handleSlot(slot uint64) {
 	leaders := r.schler.futureLeaders(slot, 1, 3)
 	go func() {
 		for _, leader := range leaders {
-			log.Info().Uint64("slot", leader.Slot).Str("leader", leader.Info.Pubkey.String()).Str("name", leader.Info.QUIC).Msg("info")
 			// Connect is a no-op for a live connection and shares an in-flight dial.
 			_, err := r.tpu.Connect(r.ctx, leader)
 			if err != nil {

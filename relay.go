@@ -239,6 +239,6 @@ func (r *Relay) sendToLeader(ctx context.Context, slot uint64, leader *LeaderAtS
 		l.Warn().Err(err).Msg("Failed to send to leader")
 		return fmt.Errorf("leader %s at slot %d: %w", leader.Info.Pubkey, leader.Slot, err)
 	}
-	l.Debug().Msg("txn sent")
+	l.Info().Msg("txn sent")
 	return nil
 }

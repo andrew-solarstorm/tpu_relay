@@ -156,7 +156,6 @@ func buildIndex(
 	return leaderAtSlot, EpochSchedule{Start: start, End: end}
 }
 
-// nodeLeaders returns the nodes that can be dialled over QUIC, by identity.
 func nodeLeaders(nodes []*rpc.GetClusterNodesResult) map[solana.PK]*Leader {
 	leaders := make(map[solana.PK]*Leader, len(nodes))
 	for _, node := range nodes {
@@ -205,7 +204,7 @@ func (sche *scheduler) futureLeaders(slot, slotDiff, n uint64) []*LeaderAtSlot {
 	defer sche.mu.RUnlock()
 
 	first := slot + slotDiff
-	if first < slot { // overflow
+	if first < slot {
 		return nil
 	}
 	first = max(first, sche.epSche.Start)

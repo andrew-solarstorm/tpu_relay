@@ -15,6 +15,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/mr-tron/base58"
+	"github.com/rs/zerolog/log"
 )
 
 const HTTP_SVC = "http-service"
@@ -182,7 +183,7 @@ func (svc *HTTPService) sendTxn(req *RPCRequest, c *gin.Context) {
 		return
 	}
 
-	// send to 2 slot ahead and 2 leaders from the target slot.
+	// send to 0 slot ahead and 2 leaders from the target slot.
 	err = svc.relaySvc.Relay().SendRawTransaction(c.Request.Context(), txReqBytes, 0, 2)
 	if err != nil {
 		svc.handleErr(c, err, ErrCodeInternalError)
@@ -190,7 +191,7 @@ func (svc *HTTPService) sendTxn(req *RPCRequest, c *gin.Context) {
 	}
 
 	sig := tx.Signatures[0]
-	fmt.Printf("[TX Sent] Signature: %s, Size: %d bytes\n", sig.String(), len(txReqBytes))
+	log.Info().Str("signature", sig.String()).Int("size", len(txReqBytes)).Msg("tx sent")
 
 	resp := &RPCResponse{
 		ID:      req.ID,

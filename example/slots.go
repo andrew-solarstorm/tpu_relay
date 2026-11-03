@@ -119,7 +119,7 @@ func (svc *SlotFeedService) readLoop(ctx context.Context, conn *websocket.Conn) 
 
 		var notif slotNotification
 		if err := json.Unmarshal(msg, &notif); err != nil {
-			log.Error().Err(err).Msg("failed to decode slot notification")
+			log.Warn().Err(err).Msg("failed to decode slot notification")
 			continue
 		}
 

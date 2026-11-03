@@ -93,7 +93,8 @@ func (r *Relay) handleSlot(slot uint64) {
 		go func() {
 			_, err := r.tpu.Connect(r.ctx, leader)
 			if err != nil {
-				log.Error().Err(err).Msgf("failed to establish connection to %s at slot %d", leader.Info.Pubkey.String(), leader.Slot)
+				// connect already warns with the dial details; this is the pre-connect for an upcoming leader
+				log.Debug().Err(err).Msgf("failed to establish connection to %s at slot %d", leader.Info.Pubkey.String(), leader.Slot)
 			}
 		}()
 
@@ -234,9 +235,10 @@ func (r *Relay) sendToLeader(ctx context.Context, slot uint64, leader *LeaderAtS
 		Logger()
 
 	if err := r.tpu.Send(ctx, leader, rawTx); err != nil {
-		l.Error().Err(err).Msg("Failed to send to leader")
+		// one leader failing is expected, SendRawTransaction only errors once all of them do
+		l.Warn().Err(err).Msg("Failed to send to leader")
 		return fmt.Errorf("leader %s at slot %d: %w", leader.Info.Pubkey, leader.Slot, err)
 	}
-	l.Info().Msg("txn sent")
+	l.Debug().Msg("txn sent")
 	return nil
 }

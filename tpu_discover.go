@@ -46,7 +46,7 @@ func NewTPUDiscover(ctx context.Context, maxCon int) (*tpuDiscover, error) {
 }
 
 func (svc *tpuDiscover) onEvict(pk solana.PublicKey, leader *LeaderConn) {
-	log.Info().Str("PublicKey", pk.String()).Msg("Evict msg")
+	log.Debug().Str("PublicKey", pk.String()).Msg("Evict msg")
 	_ = leader.Conn.CloseWithError(quic.ApplicationErrorCode(quic.NoError), "client close")
 }
 
@@ -106,7 +106,7 @@ func (svc *tpuDiscover) connect(ctx context.Context, leader *LeaderAtSlot) (*Lea
 	tn := time.Now()
 	udpAddr, err := net.ResolveUDPAddr("udp", leader.Info.TPUQUIC)
 	if err != nil {
-		log.Error().
+		log.Warn().
 			Err(err).
 			Str("quic", leader.Info.TPUQUIC).
 			Str("leader", leader.Info.Pubkey.String()).
@@ -120,14 +120,14 @@ func (svc *tpuDiscover) connect(ctx context.Context, leader *LeaderAtSlot) (*Lea
 		KeepAlivePeriod:      15 * time.Second,
 	})
 	if err != nil {
-		log.Error().
+		log.Warn().
 			Err(err).
 			Str("leader", leader.Info.Pubkey.String()).
 			Msg("TPUService::connect dial error")
 		return nil, err
 	}
 
-	log.Info().
+	log.Debug().
 		Str("quic", leader.Info.TPUQUIC).
 		Str("leader", leader.Info.Pubkey.String()).
 		Uint64("slot", leader.Slot).

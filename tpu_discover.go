@@ -130,7 +130,7 @@ func (svc *tpuDiscover) connect(ctx context.Context, leader *LeaderAtSlot) (*Lea
 	log.Debug().
 		Str("quic", leader.Leader.TPUQUIC).
 		Str("leader", leader.Leader.Pubkey.String()).
-		Str("Name", leader.Leader.Name).
+		Str("name", leader.Leader.Name).
 		Str("country", leader.Leader.IPCountry).
 		Str("city", leader.Leader.IPCity).
 		Bool("is JITO", leader.Leader.IsJITO).

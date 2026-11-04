@@ -17,9 +17,11 @@ type leaderInfo struct {
 	Client     string    `json:"softwareClient"`
 }
 
-//go:embed validators.json
-var validatorsContents string
-var validatorInfos map[solana.PK]leaderInfo
+var (
+	//go:embed validators.json
+	validatorsContents string
+	validatorInfos     map[solana.PK]*leaderInfo
+)
 
 func init() {
 	infos := make([]*leaderInfo, 0)
@@ -33,5 +35,6 @@ func init() {
 		leaderInfos[info.Pubkey] = info
 	}
 
+	validatorInfos = leaderInfos
 	validatorsContents = ""
 }

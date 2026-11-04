@@ -232,7 +232,7 @@ func (r *Relay) sendToLeader(ctx context.Context, slot uint64, leader *LeaderAtS
 		Uint64("Slot", leader.Slot).
 		Str("quic", leader.Leader.TPUQUIC).
 		Str("leader", leader.Leader.Pubkey.String()).
-		Str("Name", leader.Leader.Name).
+		Str("name", leader.Leader.Name).
 		Str("country", leader.Leader.IPCountry).
 		Str("city", leader.Leader.IPCity).
 		Bool("is JITO", leader.Leader.IsJITO).

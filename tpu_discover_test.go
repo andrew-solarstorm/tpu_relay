@@ -62,7 +62,7 @@ func TestConnectSharesInflightDial(t *testing.T) {
 	}
 	defer svc.Close()
 
-	leader := &LeaderAtSlot{Slot: 1, Info: &Leader{Pubkey: pk(1), TPUQUIC: addr}}
+	leader := &LeaderAtSlot{Slot: 1, Leader: &Leader{Pubkey: pk(1), TPUQUIC: addr}}
 
 	const callers = 20
 	conns := make([]*LeaderConn, callers)
@@ -102,7 +102,7 @@ func TestSendDeliversAndRedialsDeadConn(t *testing.T) {
 	}
 	defer svc.Close()
 
-	leader := &LeaderAtSlot{Slot: 1, Info: &Leader{Pubkey: pk(1), TPUQUIC: addr}}
+	leader := &LeaderAtSlot{Slot: 1, Leader: &Leader{Pubkey: pk(1), TPUQUIC: addr}}
 
 	if err := svc.Send(ctx, leader, []byte("hello")); err != nil {
 		t.Fatal(err)
@@ -117,12 +117,12 @@ func TestSendDeliversAndRedialsDeadConn(t *testing.T) {
 	}
 
 	// kill the pooled connection; the next send must dial a fresh one
-	old := svc.live(leader.Info.Pubkey)
+	old := svc.live(leader.Leader.Pubkey)
 	_ = old.Conn.CloseWithError(0, "test")
 	if err := svc.Send(ctx, leader, []byte("again")); err != nil {
 		t.Fatal(err)
 	}
-	if got := svc.live(leader.Info.Pubkey); got == nil || got == old {
+	if got := svc.live(leader.Leader.Pubkey); got == nil || got == old {
 		t.Fatal("expected a fresh connection after the old one died")
 	}
 	// Dial returns before the server's Accept loop has necessarily run
@@ -145,7 +145,7 @@ func TestCloseClosesPooledConns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	leader := &LeaderAtSlot{Slot: 1, Info: &Leader{Pubkey: pk(1), TPUQUIC: addr}}
+	leader := &LeaderAtSlot{Slot: 1, Leader: &Leader{Pubkey: pk(1), TPUQUIC: addr}}
 	conn, err := svc.Connect(ctx, leader)
 	if err != nil {
 		t.Fatal(err)

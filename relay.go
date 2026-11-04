@@ -94,10 +94,9 @@ func (r *Relay) handleSlot(slot uint64) {
 			_, err := r.tpu.Connect(r.ctx, leader)
 			if err != nil {
 				// connect already warns with the dial details; this is the pre-connect for an upcoming leader
-				log.Debug().Err(err).Msgf("failed to establish connection to %s at slot %d", leader.Info.Pubkey.String(), leader.Slot)
+				log.Debug().Err(err).Msgf("failed to establish connection to %s at slot %d", leader.Leader.Pubkey.String(), leader.Slot)
 			}
 		}()
-
 	}
 }
 
@@ -231,13 +230,20 @@ func (r *Relay) sendToLeader(ctx context.Context, slot uint64, leader *LeaderAtS
 	l := log.With().
 		Uint64("current_slot", slot).
 		Uint64("Slot", leader.Slot).
-		Str("leader", leader.Info.Pubkey.String()).
+		Str("quic", leader.Leader.TPUQUIC).
+		Str("leader", leader.Leader.Pubkey.String()).
+		Str("Name", leader.Leader.Name).
+		Str("country", leader.Leader.IPCountry).
+		Str("city", leader.Leader.IPCity).
+		Bool("is JITO", leader.Leader.IsJITO).
+		Str("client", leader.Leader.Client).
+		Uint64("slot", leader.Slot).
 		Logger()
 
 	if err := r.tpu.Send(ctx, leader, rawTx); err != nil {
 		// one leader failing is expected, SendRawTransaction only errors once all of them do
 		l.Warn().Err(err).Msg("Failed to send to leader")
-		return fmt.Errorf("leader %s at slot %d: %w", leader.Info.Pubkey, leader.Slot, err)
+		return fmt.Errorf("leader %s at slot %d: %w", leader.Leader.Pubkey, leader.Slot, err)
 	}
 	l.Info().Msg("txn sent")
 	return nil

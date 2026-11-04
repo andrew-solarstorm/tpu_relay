@@ -62,7 +62,7 @@ func (svc *tpuDiscover) live(pk solana.PublicKey) *LeaderConn {
 }
 
 func (svc *tpuDiscover) Connect(ctx context.Context, leader *LeaderAtSlot) (*LeaderConn, error) {
-	pk := leader.Info.Pubkey
+	pk := leader.Leader.Pubkey
 	if conn := svc.live(pk); conn != nil {
 		return conn, nil
 	}
@@ -94,9 +94,9 @@ func (svc *tpuDiscover) dial(call *dialCall, leader *LeaderAtSlot) {
 
 	svc.mut.Lock()
 	if call.err == nil {
-		svc.pool.Add(leader.Info.Pubkey, call.conn)
+		svc.pool.Add(leader.Leader.Pubkey, call.conn)
 	}
-	delete(svc.dialing, leader.Info.Pubkey)
+	delete(svc.dialing, leader.Leader.Pubkey)
 	svc.mut.Unlock()
 
 	close(call.done)
@@ -104,12 +104,12 @@ func (svc *tpuDiscover) dial(call *dialCall, leader *LeaderAtSlot) {
 
 func (svc *tpuDiscover) connect(ctx context.Context, leader *LeaderAtSlot) (*LeaderConn, error) {
 	tn := time.Now()
-	udpAddr, err := net.ResolveUDPAddr("udp", leader.Info.TPUQUIC)
+	udpAddr, err := net.ResolveUDPAddr("udp", leader.Leader.TPUQUIC)
 	if err != nil {
 		log.Warn().
 			Err(err).
-			Str("quic", leader.Info.TPUQUIC).
-			Str("leader", leader.Info.Pubkey.String()).
+			Str("quic", leader.Leader.TPUQUIC).
+			Str("leader", leader.Leader.Pubkey.String()).
 			Msg("TPUService::connect error")
 		return nil, err
 	}
@@ -122,19 +122,24 @@ func (svc *tpuDiscover) connect(ctx context.Context, leader *LeaderAtSlot) (*Lea
 	if err != nil {
 		log.Warn().
 			Err(err).
-			Str("leader", leader.Info.Pubkey.String()).
+			Str("leader", leader.Leader.Pubkey.String()).
 			Msg("TPUService::connect dial error")
 		return nil, err
 	}
 
 	log.Debug().
-		Str("quic", leader.Info.TPUQUIC).
-		Str("leader", leader.Info.Pubkey.String()).
+		Str("quic", leader.Leader.TPUQUIC).
+		Str("leader", leader.Leader.Pubkey.String()).
+		Str("Name", leader.Leader.Name).
+		Str("country", leader.Leader.IPCountry).
+		Str("city", leader.Leader.IPCity).
+		Bool("is JITO", leader.Leader.IsJITO).
+		Str("client", leader.Leader.Client).
 		Uint64("slot", leader.Slot).
 		Msgf("TPUService::connect Dial took: %s", time.Since(tn))
 
 	return &LeaderConn{
-		QUICURL: leader.Info.TPUQUIC,
+		QUICURL: leader.Leader.TPUQUIC,
 		Conn:    conn,
 	}, nil
 }

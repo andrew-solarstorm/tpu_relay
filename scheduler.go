@@ -160,9 +160,20 @@ func nodeLeaders(nodes []*rpc.GetClusterNodesResult) map[solana.PK]*Leader {
 	leaders := make(map[solana.PK]*Leader, len(nodes))
 	for _, node := range nodes {
 		if node.TPUQUIC != nil && !node.Pubkey.IsZero() {
-			leaders[node.Pubkey] = &Leader{
+			lder := &Leader{
 				TPUQUIC: *node.TPUQUIC,
 				Pubkey:  node.Pubkey,
+			}
+
+			leaders[node.Pubkey] = lder
+			ifo, ok := validatorInfos[node.Pubkey]
+			if ok {
+				lder.VotePubkey = ifo.VotePubkey
+				lder.Client = ifo.Client
+				lder.IPCity = ifo.IPCity
+				lder.IPCountry = ifo.IPCountry
+				lder.IsJITO = ifo.IsJITO
+				lder.Name = ifo.Name
 			}
 		}
 	}
@@ -227,7 +238,7 @@ func (sche *scheduler) futureLeaders(slot, slotDiff, n uint64) []*LeaderAtSlot {
 			continue
 		}
 
-		leaders = append(leaders, &LeaderAtSlot{Info: l, Slot: s})
+		leaders = append(leaders, &LeaderAtSlot{Leader: l, Slot: s})
 		unique[l.Pubkey] = struct{}{}
 		if uint64(len(leaders)) >= n {
 			break

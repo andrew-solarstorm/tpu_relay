@@ -45,7 +45,7 @@ func TestFutureLeadersReportsLeaderSlot(t *testing.T) {
 	s := newTestScheduler(100, 200, map[uint64]byte{101: 1, 102: 2})
 
 	got := s.futureLeaders(100, 1, 1)
-	if len(got) != 1 || got[0].Slot != 101 || got[0].Info.Pubkey != pk(1) {
+	if len(got) != 1 || got[0].Slot != 101 || got[0].Leader.Pubkey != pk(1) {
 		t.Fatalf("want leader 1 at slot 101, got %v", slotsOf(got))
 	}
 }
@@ -161,7 +161,7 @@ func TestAdvanceSwitchesToPrefetchedEpoch(t *testing.T) {
 	if !s.inEpoch(250) || s.inEpoch(150) {
 		t.Errorf("epoch after advance = %+v", s.epSche)
 	}
-	if got := s.futureLeaders(205, 0, 1); len(got) != 1 || got[0].Info.Pubkey != pk(2) {
+	if got := s.futureLeaders(205, 0, 1); len(got) != 1 || got[0].Leader.Pubkey != pk(2) {
 		t.Errorf("leaders after advance = %v", slotsOf(got))
 	}
 	if s.next != nil || s.advance(250) {

@@ -11,14 +11,19 @@ type LeaderConn struct {
 }
 
 type Leader struct {
-	Pubkey  solana.PublicKey `json:"pubkey"`
-	TPUQUIC string           `json:"tpuquic"`
-	QUIC    string
+	Pubkey     solana.PublicKey
+	VotePubkey solana.PK
+	TPUQUIC    string
+	Name       string
+	IPCountry  string
+	IPCity     string
+	Client     string
+	IsJITO     bool
 }
 
 type LeaderAtSlot struct {
-	Slot uint64
-	Info *Leader
+	Slot   uint64
+	Leader *Leader
 }
 
 type EpochSchedule struct {

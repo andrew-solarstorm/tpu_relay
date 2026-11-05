@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/andrew-solarstorm/digo"
 	"github.com/bytedance/sonic"
@@ -191,7 +192,7 @@ func (svc *HTTPService) sendTxn(req *RPCRequest, c *gin.Context) {
 	}
 
 	sig := tx.Signatures[0]
-	log.Info().Str("signature", sig.String()).Int("size", len(txReqBytes)).Msg("tx sent")
+	log.Info().Str("signature", sig.String()).Int("size", len(txReqBytes)).Uint64("at", uint64(time.Now().UnixMilli())).Msg("tx sent")
 
 	resp := &RPCResponse{
 		ID:      req.ID,

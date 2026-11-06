@@ -117,12 +117,12 @@ func TestSendDeliversAndRedialsDeadConn(t *testing.T) {
 	}
 
 	// kill the pooled connection; the next send must dial a fresh one
-	old := svc.live(leader.Leader.Pubkey)
+	old := svc.live(leader.Leader.TPUQUIC)
 	_ = old.Conn.CloseWithError(0, "test")
 	if err := svc.Send(ctx, leader, []byte("again")); err != nil {
 		t.Fatal(err)
 	}
-	if got := svc.live(leader.Leader.Pubkey); got == nil || got == old {
+	if got := svc.live(leader.Leader.TPUQUIC); got == nil || got == old {
 		t.Fatal("expected a fresh connection after the old one died")
 	}
 	// Dial returns before the server's Accept loop has necessarily run
@@ -154,5 +154,46 @@ func TestCloseClosesPooledConns(t *testing.T) {
 	svc.Close()
 	if conn.Conn.Context().Err() == nil {
 		t.Fatal("connection still open after Close")
+	}
+}
+
+// Validators behind one shared TPU endpoint (e.g. a BAM node) must share a single
+// connection: the server limits unstaked peers per source IP and closes extra
+// connections with "too_many".
+func TestConnectSharesConnAcrossLeadersOnSameEndpoint(t *testing.T) {
+	addr, accepted, _ := startTPUServer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	svc, err := NewTPUDiscover(ctx, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	a := &LeaderAtSlot{Slot: 1, Leader: &Leader{Pubkey: pk(1), TPUQUIC: addr}}
+	b := &LeaderAtSlot{Slot: 5, Leader: &Leader{Pubkey: pk(2), TPUQUIC: addr}}
+
+	var wg sync.WaitGroup
+	conns := make([]*LeaderConn, 2)
+	for i, l := range []*LeaderAtSlot{a, b} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, err := svc.Connect(ctx, l)
+			if err != nil {
+				t.Error(err)
+			}
+			conns[i] = c
+		}()
+	}
+	wg.Wait()
+
+	if conns[0] != conns[1] {
+		t.Fatal("leaders on the same endpoint got different connections")
+	}
+	time.Sleep(100 * time.Millisecond) // let any stray extra dial reach the server
+	if n := accepted.Load(); n != 1 {
+		t.Fatalf("server accepted %d connections, want 1", n)
 	}
 }
